@@ -43,7 +43,7 @@ def localcmd(cmd_str, check_ouput=False):
         return None
 
 def get_pod_name (testbed, pod_index):
-    return "tlsjet_{}_pod_{}".format (testbed, pod_index+1)
+    return "tlspack_{}_pod_{}".format (testbed, pod_index+1)
 
 def get_pod_ip (testbed, pod_index):
     pod_name = get_pod_name (testbed, pod_index)
@@ -273,7 +273,7 @@ class TlsCsAppTestbed (TlsAppTestbed):
         else:
             node_iface = traffic_path['server']['iface']
 
-        cmd_str = "sudo docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --network=bridge --privileged --name {} -it -d {} {} tlsjet:latest /bin/bash".format (pod_name, rundir_map, srcdir_map)
+        cmd_str = "sudo docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --network=bridge --privileged --name {} -it -d {} {} tlspack/node:latest /bin/bash".format (pod_name, rundir_map, srcdir_map)
         nodecmd (cmd_str)
 
         pod_ip = get_pod_ip (self.testbed, pod_index)
