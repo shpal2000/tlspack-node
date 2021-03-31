@@ -10,7 +10,7 @@ app = web.Application()
 async def create_config(request):
     data_s = await request.read()
     data_j = json.loads(data_s)
-    return web.json_response (TlsApp.create_config ('tlspack-node.apps'
+    return web.json_response (TlsApp.create_config ('rundir.apps'
                                 , data_j['app_name']
                                 , data_j['testbed']
                                 , **data_j['app_params']))
@@ -18,7 +18,7 @@ async def create_config(request):
 async def start_run(request):
     data_s = await request.read()
     data_j = json.loads(data_s)
-    TlsApp.start_run ('tlspack-node.apps'
+    TlsApp.start_run ('rundir.apps'
                         , data_j['runid']
                         , data_j['app_config'])
     return web.json_response ({'status' : 0})
