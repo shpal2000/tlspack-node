@@ -100,7 +100,7 @@ def start_run_stats (runid
     if client_pod_ips:
         pod_ips += ' --client_pod_ips ' + ':'.join(client_pod_ips)
 
-    localcmd('python3 -m tlspack-node.apps.TlsApp --runid {} {} & echo $! > {}'. \
+    localcmd('python3 -m apps.TlsApp --runid {} {} & echo $! > {}'. \
                                 format (runid, pod_ips, stats_pid_file))
 
     stats_pid = 0
@@ -288,7 +288,7 @@ class TlsCsAppTestbed (TlsAppTestbed):
         cmd_str = "sudo docker exec -d {} echo '/rundir/cores/core.%t.%e.%p' | tee /proc/sys/kernel/core_pattern".format(pod_name)
         nodecmd (cmd_str)
         
-        cmd_str = "sudo docker exec -d {} /rundir/tlspack-node/PodService.py {} {}".format(pod_name, pod_ip, RPC_PORT)
+        cmd_str = "sudo docker exec -d {} /rundir/PodService.py {} {}".format(pod_name, pod_ip, RPC_PORT)
         nodecmd (cmd_str)
 
 
