@@ -100,7 +100,7 @@ def start_run_stats (runid
     if client_pod_ips:
         pod_ips += ' --client_pod_ips ' + ':'.join(client_pod_ips)
 
-    localcmd('python3 -m apps.TlsApp --runid {} {} & echo $! > {}'. \
+    localcmd('python3 -m rundir.apps.TlsApp --runid {} {} & echo $! > {}'. \
                                 format (runid, pod_ips, stats_pid_file))
 
     stats_pid = 0
