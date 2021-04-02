@@ -7,51 +7,63 @@ from .apps.TlsApp import TlsApp
 
 app = web.Application()
 
-async def create_config(request):
-    data_s = await request.read()
-    data_j = json.loads(data_s)
-    return web.json_response (TlsApp.create_config ('rundir.apps'
-                                , data_j['app_name']
-                                , data_j['testbed']
-                                , **data_j['app_params']))
-
-async def start_run(request):
-    data_s = await request.read()
-    data_j = json.loads(data_s)
-    TlsApp.start_run ('rundir.apps'
-                        , data_j['runid']
-                        , data_j['app_config'])
-    return web.json_response ({'status' : 0})
-
-
-async def purge_testbed(request):
-    data_s = await request.read()
-    data_j = json.loads(data_s)
-    TlsApp.purge_testbed (data_j['testbed'])
-    return web.json_response ({'status' : 0})
-
-
-async def stop_run(request):
-    data_s = await request.read()
-    data_j = json.loads(data_s)
-    TlsApp.stop_run (data_j['runid'])
-    return web.json_response ({'status' : 0})
-
-
-async def run_stats(request):
-    return web.json_response (TlsApp.run_stats (request.query['runid']))
-
-
 async def run_list(request):
     return web.json_response ({"run_list" : TlsApp.run_list()})
 
+async def run_stats(request):
+    runid = request.match_info['runid']
+    return web.json_response (TlsApp.run_stats (runid))
+
+async def start_run(request):
+    runid = request.match_info['runid']
+    app_name = request.query['app']
+    neighborhood = request.query['neighborhood']
+
+    data_s = await request.read()
+    data_j = json.loads(data_s)
+
+    cfg_j = TlsApp.create_config ('rundir.apps'
+                            , app_name
+                            , neighborhood
+                            , **data_j)
+
+    TlsApp.start_run ('rundir.apps'
+                        , runid
+                        , cfg_j)
+
+    return web.json_response ({'status' : 0})
+
+async def stop_run(request):
+    runid = request.match_info['runid']
+    TlsApp.stop_run (runid)
+    return web.json_response ({'status' : 0})
+
+async def get_neighborhood(request):
+    neighborhood_name = request.match_info['neighborhood_name']
+    with open ('/rundir/arenas/'+neighborhood_name) as f:
+        return web.json_response(json.loads(f.read()))
+
+async def set_neighborhood(request):
+    neighborhood_name = request.match_info['neighborhood_name']
+    data_s = await request.read()
+    data_j = json.loads(data_s)
+    data_j['testbed'] = neighborhood_name
+    with open ('/rundir/arenas/'+neighborhood_name, 'w') as f:
+        f.write(json.dumps(data_j))
+    return web.json_response ({'status' : 0})
+
+async def remove_neighborhood(request):
+    neighborhood_name = request.match_info['neighborhood_name']
+    os.system('rm -f ' + '/rundir/arenas/'+neighborhood_name)
+    return web.json_response ({'status' : 0})
 
 app.add_routes([web.get('/run_list', run_list),
-                web.get('/run_stats', run_stats),
-                web.post('/stop_run', stop_run),
-                web.post('/purge_testbed', purge_testbed),
-                web.post('/start_run', start_run),
-                web.post('/create_config', create_config)])
+                web.get('/run_stats/{runid:.*}', run_stats),
+                web.post('/start_run/{runid:.*}', start_run),
+                web.get('/stop_run/{runid:.*}', stop_run),
+                web.get('/neighborhood/{neighborhood_name:.*}', get_neighborhood),
+                web.post('/neighborhood/{neighborhood_name:.*}', set_neighborhood),
+                web.delete('/neighborhood/{neighborhood_name:.*}', remove_neighborhood)])
 
 if __name__ == '__main__':
     TlsApp.restart(sys.argv[1])

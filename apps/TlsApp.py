@@ -373,11 +373,15 @@ class TlsApp(object):
         testbed_table = db[TESTBED_TABLE]
         testbed_table.remove ({})
 
-        with open ('/rundir/arenas/arena-0.json') as f:
-            testbed0 = json.load(f)
-            testbed_table.insert (testbed0)
-
-
+        for areana in os.listdir('/rundir/arenas'):
+            next_arena_file = '/rundir/arenas/'+areana
+            with open (next_arena_file) as f:
+                try:
+                    next_arena = json.load(f)
+                except:
+                    continue
+                next_arena['testbed'] = areana
+                testbed_table.insert (next_arena)
 
 
     @staticmethod
