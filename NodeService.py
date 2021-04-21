@@ -41,13 +41,18 @@ async def stop_run(request):
 async def get_neighborhood(request):
     neighborhood_name = request.match_info['neighborhood_name']
     with open ('/rundir/arenas/'+neighborhood_name) as f:
-        return web.json_response(json.loads(f.read()))
+        data_j = json.loads(f.read())
+        data_j.pop('modified', None)
+        return web.json_response(data_j)
 
 async def set_neighborhood(request):
     neighborhood_name = request.match_info['neighborhood_name']
     data_s = await request.read()
     data_j = json.loads(data_s)
     data_j['testbed'] = neighborhood_name
+    data_j.pop('ready', None)
+    data_j.pop('runing', None)
+    data_j['modified'] = 1
     with open ('/rundir/arenas/'+neighborhood_name, 'w') as f:
         f.write(json.dumps(data_j))
     return web.json_response ({'status' : 0})

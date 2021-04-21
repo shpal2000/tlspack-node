@@ -355,7 +355,7 @@ class TlsApp(object):
     def restart(node_rundir):
         TlsCfg.NODE_RUNDIR = node_rundir
 
-        nodecmd ("sudo docker ps -a | grep '[t]lspack_' | awk '{print $1}' | xargs sudo docker rm -f")
+        nodecmd ("sudo docker ps --filter name=tlspack_* -aq | xargs sudo docker rm -f")
 
         # nodecmd ("ps aux | grep '[T]lsApp' | awk '{print $2}' | xargs kill -9")
         # localcmd("mongod --shutdown --dbpath /rundir/db")
@@ -378,11 +378,15 @@ class TlsApp(object):
             with open (next_arena_file) as f:
                 try:
                     next_arena = json.load(f)
+                    next_arena['modified'] = 0
                 except:
                     continue
                 next_arena['testbed'] = areana
                 testbed_table.insert (next_arena)
+                next_arena.pop('_id', None)
 
+            with open (next_arena_file, 'w') as f:
+                f.write(json.dumps(next_arena))
 
     @staticmethod
     def create_config(package, app_name, testbed, **app_kwargs):
@@ -545,7 +549,17 @@ class TlsCsApp(TlsApp):
             (self.testbedI.testbed, self.testbedI.runid))
 
         # testbed readiness
-        if not self.testbedI.ready:
+        if self.testbedI.ready:
+            with open('/rundir/arenas/'+self.testbedI.testbed) as f:
+                testbed_j = json.load(f)
+            if testbed_j.get('modified', 0):
+                testbed_j['modified'] = 0
+                with open('/rundir/arenas/'+self.testbedI.testbed, 'w') as f:
+                    f.write(json.dumps(testbed_j))
+                nodecmd ("sudo docker ps --filter name=tlspack_" + self.testbedI.testbed +"_* -aq" + " | xargs sudo docker rm -f")
+                self.testbedI.start()
+                time.sleep (30)
+        else:
             self.testbedI.start()
             time.sleep (30)
 
