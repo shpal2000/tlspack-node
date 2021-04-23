@@ -390,6 +390,7 @@ class TlsApp(object):
         # nodecmd ("ps aux | grep '[T]lsApp' | awk '{print $2}' | xargs kill -9")
         # localcmd("mongod --shutdown --dbpath /rundir/db")
         
+        localcmd("rm -rf /rundir/db/*")
         localcmd("mongod --noauth --dbpath /rundir/db &")
 
         time.sleep(1)
