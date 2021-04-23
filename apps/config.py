@@ -8,6 +8,7 @@ CSTATE_TABLE = 'tgen_cstates'
 LIVE_STATS_TABLE = 'tgen_live_stats'
 
 RUN_TABLE = 'run_table'
+STATE_TABLE = 'state_table'
 TESTBED_TABLE = 'testbed_table'
 LOG_TABLE = 'log_table'
 

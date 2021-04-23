@@ -19,7 +19,7 @@ from .config import POD_RUNDIR, NODE_SRCDIR, POD_SRCDIR, TCPDUMP_FLAG
 from .config import REGISTRY_DB_NAME, RESULT_DB_NAME
 from .config import STATS_TABLE, CSTATE_TABLE, LIVE_STATS_TABLE, POD_RUNDIR
 from .config import RPC_IP_VETH1, RPC_IP_VETH2, RPC_PORT, NODE_SRCDIR, POD_SRCDIR
-from .config import TESTBED_TABLE, RUN_TABLE
+from .config import TESTBED_TABLE, RUN_TABLE, STATE_TABLE
 
 class TlsCfg:
     DB_CSTRING = 'localhost:27017'
@@ -183,6 +183,34 @@ class TlsAppRun:
         run_table.update ({'runid' : self.runid}
                             , {"$set": { "stats_pid": value }})
 
+
+    @property
+    def state (self):
+        mongoClient = MongoClient (TlsCfg.DB_CSTRING)
+        db = mongoClient[REGISTRY_DB_NAME]
+        state_table = db[STATE_TABLE]
+        return state_table.find_one ({'state_id' : self.runid}).get('state', '')
+
+    @state.setter
+    def state (self, value):
+        mongoClient = MongoClient (TlsCfg.DB_CSTRING)
+        db = mongoClient[REGISTRY_DB_NAME]
+        state_table = db[STATE_TABLE]
+        state_table.update ({'state_id' : self.runid}
+                            , {"$set": { "state": value }})
+
+    def init_state (self, value):
+        mongoClient = MongoClient (TlsCfg.DB_CSTRING)
+        db = mongoClient[REGISTRY_DB_NAME]
+        state_table = db[STATE_TABLE]
+        try:
+            state_table.remove ({'state_id' : self.runid})
+        except:
+            pass 
+        state_table.insert ({'state_id' : self.runid
+                            , 'start' : str(time.time())
+                            , 'state' : value })
+
     def dispose(self):
         mongoClient = MongoClient (TlsCfg.DB_CSTRING)
         db = mongoClient[REGISTRY_DB_NAME]
@@ -292,7 +320,7 @@ class TlsCsAppTestbed (TlsAppTestbed):
         nodecmd (cmd_str)
 
 
-    def start(self):
+    def start(self, _runI):
 
         testbed_info = self.get_info()
 
@@ -301,10 +329,12 @@ class TlsCsAppTestbed (TlsAppTestbed):
             #client
             pod_index += 1
             self.start_pod(pod_index, testbed_info, traffic_path, client=True)
+            _runI.state = 'starting containers - {}'.format(pod_index+1)
 
             #server
             pod_index += 1
             self.start_pod(pod_index, testbed_info, traffic_path, client=False)
+            _runI.state = 'starting containers - {}'.format(pod_index+1)
 
         self.ready = 1
 
@@ -397,12 +427,12 @@ class TlsApp(object):
         return config_j
 
     @staticmethod
-    def start_run (package, runid, config_j, is_dev=False):
+    def start_run (package, runid, config_j, testbed_delay=30, is_dev=False):
         app_name = config_j ['app']
         app_module = importlib.import_module ('.'+app_name, package=package)
         app_class = getattr(app_module, app_name)
         app = app_class (is_dev)
-        app.start_run (runid, config_j)
+        app.start_run (runid, config_j, testbed_delay)
         return app
 
     @staticmethod
@@ -420,7 +450,6 @@ class TlsApp(object):
         app_class = getattr(sys.modules[__name__], app_class_name)
 
         app_class.stop_run(runid)
-
 
     @staticmethod
     def stats_iter(runid):
@@ -453,7 +482,6 @@ class TlsApp(object):
 
         return stats
         
-
     @staticmethod
     def purge_testbed (testbed):
 
@@ -465,7 +493,6 @@ class TlsApp(object):
             TlsApp.stop_run (_testbedI.runid)
 
         _testbedI.stop()
-    
 
     @staticmethod
     def run_list ():
@@ -476,6 +503,13 @@ class TlsApp(object):
         if not running_app_list:
             return []
         return list (running_app_list)
+
+    @staticmethod
+    def run_state (runid):
+        mongoClient = MongoClient (TlsCfg.DB_CSTRING)
+        db = mongoClient[REGISTRY_DB_NAME]
+        state_table = db[STATE_TABLE]
+        return state_table.find_one ({'state_id' : runid}).get('state', '')
 
 
     def set_testbed(self, testbed):
@@ -491,7 +525,6 @@ class TlsApp(object):
             , 'error: incompatible testbed type {}'.format (_testbedI.type))
 
         self.testbedI = _testbedI
-
 
     def set_traffic_config (self, config_j):
 
@@ -513,12 +546,10 @@ class TlsApp(object):
                                     , 'config.json')
         return pod_cfg_file
         
-
     def stats (self):
         if not self.stats_iter:
             self.stats_iter = TlsApp.stats_iter (self.runI.runid)
         return next (self.stats_iter, None)
-
 
     def stop(self):
         if not self.runI or not self.runI.testbed:
@@ -534,7 +565,7 @@ class TlsCsApp(TlsApp):
         super().__init__(is_dev)
         self.app_testbed_type = 'TlsCsApp'
 
-    def start_run (self, runid, config_j):
+    def start_run (self, runid, config_j, testbed_delay=30):
 
         # runid info
         self.runI = TlsAppRun(runid)
@@ -548,6 +579,8 @@ class TlsCsApp(TlsApp):
             , 'error: testbed {} in use; running {}'.format \
             (self.testbedI.testbed, self.testbedI.runid))
 
+        self.runI.init_state ('initializing')
+
         # testbed readiness
         if self.testbedI.ready:
             with open('/rundir/arenas/'+self.testbedI.testbed) as f:
@@ -556,17 +589,22 @@ class TlsCsApp(TlsApp):
                 testbed_j['modified'] = 0
                 with open('/rundir/arenas/'+self.testbedI.testbed, 'w') as f:
                     f.write(json.dumps(testbed_j))
-                nodecmd ("sudo docker ps --filter name=tlspack_" + self.testbedI.testbed +"_* -aq" + " | xargs sudo docker rm -f")
-                self.testbedI.start()
-                time.sleep (30)
-        else:
-            self.testbedI.start()
-            time.sleep (30)
+                self.runI.state = 'purging containers'
+                TlsApp.purge_testbed (self.testbedI.testbed)
+
+        if not self.testbedI.ready:
+            self.runI.state = 'starting containers'
+            self.testbedI.start(self.runI)
+            for i in range(testbed_delay, -1, -1):
+                time.sleep (1)
+                self.runI.state = 'finishing - {}'.format(i)
 
         pod_cfg_file = self.set_traffic_config (config_j)
 
         testbed_info = self.testbedI.get_info()
+        
         # start the server
+        self.runI.state = 'starting servers'
         server_pod_ips = []
         pod_start_threads = []
         pod_index = 1
@@ -594,6 +632,7 @@ class TlsCsApp(TlsApp):
 
 
         # start the clients
+        self.runI.state = 'starting clients'
         client_pod_ips = []
         pod_start_threads = []
         pod_index = 0
@@ -621,6 +660,7 @@ class TlsCsApp(TlsApp):
 
         self.testbedI.runid = self.runI.runid
         self.runI.testbed = self.testbedI.testbed
+        self.runI.state = 'running'
 
         self.runI.stats_pid = start_run_stats (self.runI.runid
                                 , server_pod_ips = server_pod_ips
@@ -633,7 +673,9 @@ class TlsCsApp(TlsApp):
 
         testbed_info = _testbedI.get_info()
 
+    
         # stop the clients
+        _runI.state = 'stopping clients'
         pod_stop_threads = []
         pod_index = 0
         for traffic_path in testbed_info['traffic_paths']:
@@ -657,6 +699,7 @@ class TlsCsApp(TlsApp):
 
 
         # stop the servers
+        _runI.state = 'stopping servers'
         pod_stop_threads = []
         pod_index = 1
         for traffic_path in testbed_info['traffic_paths']:
@@ -681,6 +724,7 @@ class TlsCsApp(TlsApp):
 
         stop_run_stats (_runI.stats_pid)
 
+        _runI.state = 'stopped'
         _testbedI.runid = ''
         _runI.dispose ()
 

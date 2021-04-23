@@ -18,6 +18,7 @@ async def start_run(request):
     runid = request.match_info['runid']
     app_name = request.query['app']
     neighborhood = request.query['neighborhood']
+    testbed_delay = int(request.query.get('testbed_delay', '10'))
 
     data_s = await request.read()
     data_j = json.loads(data_s)
@@ -29,7 +30,8 @@ async def start_run(request):
 
     TlsApp.start_run ('rundir.apps'
                         , runid
-                        , cfg_j)
+                        , cfg_j
+                        , testbed_delay)
 
     return web.json_response ({'status' : 0})
 
