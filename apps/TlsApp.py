@@ -324,6 +324,20 @@ class TlsCsAppTestbed (TlsAppTestbed):
 
         testbed_info = self.get_info()
 
+
+        for uplink in testbed_info['uplink_ifaces']:
+            cmd_str = "sudo docker network rm {}".format (uplink)
+            nodecmd (cmd_str)
+            time.sleep(1)
+
+            cmd_str = "ip link set {} up".format (uplink)
+            nodecmd (cmd_str)
+            time.sleep(1)
+
+            cmd_str = "sudo docker network create -d macvlan -o parent={} macvlan_{}".format (uplink, uplink)
+            nodecmd (cmd_str)
+            time.sleep(1)
+
         pod_index = -1
         for traffic_path in testbed_info['traffic_paths']:
             #client
@@ -382,6 +396,16 @@ class TlsApp(object):
 
 
     @staticmethod
+    def insert_testbed(testbed, testbed_j):
+        mongoClient = MongoClient (TlsCfg.DB_CSTRING)
+        db = mongoClient[REGISTRY_DB_NAME]
+        testbed_table = db[TESTBED_TABLE]
+        testbed_j['testbed'] = testbed
+        testbed_table.insert (testbed_j)
+        testbed_j.pop('_id', None)
+        testbed_j.pop('testbed', None)
+
+    @staticmethod
     def restart(node_rundir):
         TlsCfg.NODE_RUNDIR = node_rundir
 
@@ -409,14 +433,13 @@ class TlsApp(object):
             with open (next_arena_file) as f:
                 try:
                     next_arena = json.load(f)
-                    next_arena['modified'] = 0
                 except:
                     continue
-                next_arena['testbed'] = areana
-                testbed_table.insert (next_arena)
-                next_arena.pop('_id', None)
+                next_arena.pop('modified', None)
+                TlsApp.insert_testbed (areana, next_arena)
 
             with open (next_arena_file, 'w') as f:
+                next_arena['modified'] = 0
                 f.write(json.dumps(next_arena))
 
     @staticmethod
@@ -428,12 +451,12 @@ class TlsApp(object):
         return config_j
 
     @staticmethod
-    def start_run (package, runid, config_j, testbed_delay=30, is_dev=False):
+    def start_run (package, runid, config_j, is_dev=False):
         app_name = config_j ['app']
         app_module = importlib.import_module ('.'+app_name, package=package)
         app_class = getattr(app_module, app_name)
         app = app_class (is_dev)
-        app.start_run (runid, config_j, testbed_delay)
+        app.start_run (runid, config_j)
         return app
 
     @staticmethod
@@ -566,7 +589,7 @@ class TlsCsApp(TlsApp):
         super().__init__(is_dev)
         self.app_testbed_type = 'TlsCsApp'
 
-    def start_run (self, runid, config_j, testbed_delay=30):
+    def start_run (self, runid, config_j):
 
         # runid info
         self.runI = TlsAppRun(runid)
@@ -596,9 +619,6 @@ class TlsCsApp(TlsApp):
         if not self.testbedI.ready:
             self.runI.state = 'starting containers'
             self.testbedI.start(self.runI)
-            for i in range(testbed_delay, -1, -1):
-                time.sleep (1)
-                self.runI.state = 'finishing - {}'.format(i)
 
         pod_cfg_file = self.set_traffic_config (config_j)
 
