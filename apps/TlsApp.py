@@ -339,16 +339,20 @@ class TlsCsAppTestbed (TlsAppTestbed):
             time.sleep(1)
 
         pod_index = -1
+        server_id = 1
+        client_id = 1
+        for traffic_path in testbed_info['traffic_paths']:
+            #server
+            pod_index += 1
+            self.start_pod(pod_index, testbed_info, traffic_path, client=False)
+            _runI.state = 'Setup Server-Subnets-Zone{}'.format(server_id)
+            server_id += 1
         for traffic_path in testbed_info['traffic_paths']:
             #client
             pod_index += 1
             self.start_pod(pod_index, testbed_info, traffic_path, client=True)
-            _runI.state = 'starting containers - {}'.format(pod_index+1)
-
-            #server
-            pod_index += 1
-            self.start_pod(pod_index, testbed_info, traffic_path, client=False)
-            _runI.state = 'starting containers - {}'.format(pod_index+1)
+            _runI.state = 'Setup Client-Subnets-Zone{}'.format(client_id)
+            client_id +=1
 
         self.ready = 1
 
@@ -365,11 +369,11 @@ class TlsCsAppTestbed (TlsAppTestbed):
 
         pod_index = -1
         for traffic_path in testbed_info['traffic_paths']:
-            #client
+            #servers
             pod_index += 1
             self.stop_pod(pod_index)
 
-            #server
+            #clients
             pod_index += 1
             self.stop_pod(pod_index)
 
@@ -494,6 +498,8 @@ class TlsApp(object):
 
     @staticmethod
     def run_stats(runid):
+        _runI = TlsAppRun (runid, new_run=False)
+
         mongoClient = MongoClient (TlsCfg.DB_CSTRING)
 
         db = mongoClient[RESULT_DB_NAME]
@@ -502,7 +508,7 @@ class TlsApp(object):
         try:
             stats = stats_col.find({'runid' : runid}, {'_id': 0})[0]
         except:
-            stats = {}
+            raise TlsAppError(-1, 'stats not found')
 
         return stats
         
@@ -603,7 +609,7 @@ class TlsCsApp(TlsApp):
             , 'error: testbed {} in use; running {}'.format \
             (self.testbedI.testbed, self.testbedI.runid))
 
-        self.runI.init_state ('initializing')
+        self.runI.init_state ('Init Setup')
 
         # testbed readiness
         if self.testbedI.ready:
@@ -617,15 +623,16 @@ class TlsCsApp(TlsApp):
                 TlsApp.purge_testbed (self.testbedI.testbed)
 
         if not self.testbedI.ready:
-            self.runI.state = 'starting containers'
             self.testbedI.start(self.runI)
+        else:
+            self.runI.state = 'Init Skipped'
 
         pod_cfg_file = self.set_traffic_config (config_j)
 
         testbed_info = self.testbedI.get_info()
         
         # start the server
-        self.runI.state = 'starting servers'
+        self.runI.state = 'Start Servers'
         server_pod_ips = []
         pod_start_threads = []
         pod_index = 1
@@ -653,7 +660,7 @@ class TlsCsApp(TlsApp):
 
 
         # start the clients
-        self.runI.state = 'starting clients'
+        self.runI.state = 'Start Clients'
         client_pod_ips = []
         pod_start_threads = []
         pod_index = 0
@@ -696,7 +703,7 @@ class TlsCsApp(TlsApp):
 
     
         # stop the clients
-        _runI.state = 'stopping clients'
+        _runI.state = 'Stop Clients'
         pod_stop_threads = []
         pod_index = 0
         for traffic_path in testbed_info['traffic_paths']:
@@ -720,7 +727,7 @@ class TlsCsApp(TlsApp):
 
 
         # stop the servers
-        _runI.state = 'stopping servers'
+        _runI.state = 'Stop Servers'
         pod_stop_threads = []
         pod_index = 1
         for traffic_path in testbed_info['traffic_paths']:
