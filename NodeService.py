@@ -54,14 +54,12 @@ async def start_run(request):
             with open (neighborhood_file_name, 'w') as f:
                 f.write(json.dumps(neighborhood_j))
 
-        cfg_j = TlsApp.create_config ('rundir.apps'
-                                , app_name
-                                , neighborhood_name
-                                , **data_j)
 
         TlsApp.start_run ('rundir.apps'
+                            , app_name
+                            , neighborhood_name
                             , runid
-                            , cfg_j)
+                            , **data_j)
     except TlsAppError as err:
         return web.Response (status=500, text=str(err))
 

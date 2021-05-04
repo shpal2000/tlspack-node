@@ -220,8 +220,7 @@ class TlsAppRun:
 
 
 class TlsAppTestbed:
-    def __init__(self, testbed, is_dev=False):
-        self.is_dev = is_dev
+    def __init__(self, testbed):
         self.testbed = testbed
         mongoClient = MongoClient (TlsCfg.DB_CSTRING)
         db = mongoClient[REGISTRY_DB_NAME]
@@ -281,9 +280,9 @@ class TlsAppTestbed:
 
 
 class TlsCsAppTestbed (TlsAppTestbed):
-    def __init__(self, testbed, is_dev=False):
+    def __init__(self, testbed):
 
-        super().__init__(testbed, is_dev)
+        super().__init__(testbed)
 
         testbed_info = self.get_info()
 
@@ -328,15 +327,15 @@ class TlsCsAppTestbed (TlsAppTestbed):
         for uplink in testbed_info['uplink_ifaces']:
             cmd_str = "sudo docker network rm {}".format (uplink)
             nodecmd (cmd_str)
-            time.sleep(1)
+            time.sleep(5)
 
-            cmd_str = "ip link set {} up".format (uplink)
+            cmd_str = "ip link set dev {} up".format (uplink)
             nodecmd (cmd_str)
-            time.sleep(1)
+            time.sleep(5)
 
-            cmd_str = "sudo docker network create -d macvlan -o parent={} macvlan_{}".format (uplink, uplink)
+            cmd_str = "sudo docker network create -d macvlan -o parent={} macvlan_{} -o macvlan_mode=bridge".format (uplink, uplink)
             nodecmd (cmd_str)
-            time.sleep(1)
+            time.sleep(5)
 
         pod_index = -1
         server_id = 1
@@ -381,8 +380,7 @@ class TlsCsAppTestbed (TlsAppTestbed):
 
 
 class TlsApp(object):
-    def __init__(self, is_dev=False):
-        self.is_dev = is_dev
+    def __init__(self):
 
         self.pod_certs_dir = os.path.join(POD_RUNDIR, 'certs')
         self.pod_lib_dir = os.path.join(POD_RUNDIR, 'lib')
@@ -410,13 +408,20 @@ class TlsApp(object):
         testbed_j.pop('testbed', None)
 
     @staticmethod
+    def remove_testbed(testbed):
+        mongoClient = MongoClient (TlsCfg.DB_CSTRING)
+        db = mongoClient[REGISTRY_DB_NAME]
+        testbed_table = db[TESTBED_TABLE]
+        testbed_table.remove ({'testbed' : testbed})
+
+    @staticmethod
     def restart(node_rundir):
         TlsCfg.NODE_RUNDIR = node_rundir
 
         nodecmd ("sudo docker ps --filter name=tlspack_* -aq | xargs sudo docker rm -f")
 
         # nodecmd ("ps aux | grep '[T]lsApp' | awk '{print $2}' | xargs kill -9")
-        # localcmd("mongod --shutdown --dbpath /rundir/db")
+        localcmd("mongod --shutdown --dbpath /rundir/db")
         
         localcmd("rm -rf /rundir/db/*")
         localcmd("mongod --noauth --dbpath /rundir/db &")
@@ -455,12 +460,11 @@ class TlsApp(object):
         return config_j
 
     @staticmethod
-    def start_run (package, runid, config_j, is_dev=False):
-        app_name = config_j ['app']
+    def start_run (package, app_name, testbed, runid, **app_kwargs):
         app_module = importlib.import_module ('.'+app_name, package=package)
         app_class = getattr(app_module, app_name)
-        app = app_class (is_dev)
-        app.start_run (runid, config_j)
+        app = app_class ()
+        app.start_run (testbed, runid, **app_kwargs)
         return app
 
     @staticmethod
@@ -524,6 +528,8 @@ class TlsApp(object):
 
         _testbedI.stop()
 
+        TlsApp.remove_testbed (testbed)
+
     @staticmethod
     def run_list ():
         mongoClient = MongoClient (TlsCfg.DB_CSTRING)
@@ -547,7 +553,7 @@ class TlsApp(object):
         # testbed info
         testbed_class_name = self.app_testbed_type + 'Testbed'
         testbed_class = getattr(sys.modules[__name__], testbed_class_name)
-        _testbedI = testbed_class (testbed, self.is_dev)
+        _testbedI = testbed_class (testbed)
 
         # testbed compatibility
         if not _testbedI.type == self.app_testbed_type:
@@ -591,17 +597,17 @@ class TlsApp(object):
         self.testbedI = None
 
 class TlsCsApp(TlsApp):
-    def __init__ (self, is_dev=False):
-        super().__init__(is_dev)
+    def __init__ (self):
+        super().__init__()
         self.app_testbed_type = 'TlsCsApp'
 
-    def start_run (self, runid, config_j):
+    def start_run (self, testbed, runid, **app_kwargs):
 
         # runid info
         self.runI = TlsAppRun(runid)
 
         #testbed
-        self.set_testbed (config_j['testbed'])
+        self.set_testbed (testbed)
 
         # testbed availability
         if self.testbedI.busy:
@@ -619,13 +625,20 @@ class TlsCsApp(TlsApp):
                 testbed_j['modified'] = 0
                 with open('/rundir/arenas/'+self.testbedI.testbed, 'w') as f:
                     f.write(json.dumps(testbed_j))
-                self.runI.state = 'purging containers'
+                self.runI.state = 'Purging Subnet-Zones'
                 TlsApp.purge_testbed (self.testbedI.testbed)
+                testbed_j.pop('modified', None)
+                TlsApp.insert_testbed(self.testbedI.testbed, testbed_j)
 
         if not self.testbedI.ready:
             self.testbedI.start(self.runI)
+            time.sleep(5)
+            self.runI.state = 'Exit Setup'
+            time.sleep(20)
         else:
             self.runI.state = 'Init Skipped'
+
+        config_j = self.create_config(self.testbedI.testbed, **app_kwargs)
 
         pod_cfg_file = self.set_traffic_config (config_j)
 
@@ -656,7 +669,7 @@ class TlsCsApp(TlsApp):
         if pod_start_threads:
             for thd in pod_start_threads:
                 thd.join()
-            time.sleep(1)
+            time.sleep(5)
 
 
         # start the clients
@@ -684,7 +697,7 @@ class TlsCsApp(TlsApp):
         if pod_start_threads:
             for thd in pod_start_threads:
                 thd.join()
-            time.sleep(1)
+            time.sleep(5)
 
         self.testbedI.runid = self.runI.runid
         self.runI.testbed = self.testbedI.testbed
@@ -851,9 +864,3 @@ if __name__ == '__main__':
                     , server_pod_ips
                     , proxy_pod_ips
                     , client_pod_ips)
-
-
-
-        
-        
-      
