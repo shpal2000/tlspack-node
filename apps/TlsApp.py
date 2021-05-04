@@ -27,6 +27,7 @@ class TlsCfg:
 
 
 def nodecmd(_cmd_str, check_ouput=False):
+    print (_cmd_str)
     ssh_cmd = "ssh -i /rundir/ssh/ssh_rsa_id -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null localhost"
     cmd_str = ssh_cmd + ' ' + '"{}"'.format (_cmd_str)
     if check_ouput:
@@ -323,35 +324,30 @@ class TlsCsAppTestbed (TlsAppTestbed):
 
         testbed_info = self.get_info()
 
-
         for uplink in testbed_info['uplink_ifaces']:
-            cmd_str = "sudo docker network rm {}".format (uplink)
+            cmd_str = "sudo docker network rm {}".format (testbed_info[uplink]['macvlan'])
             nodecmd (cmd_str)
-            time.sleep(5)
 
             cmd_str = "ip link set dev {} up".format (uplink)
             nodecmd (cmd_str)
-            time.sleep(5)
 
-            cmd_str = "sudo docker network create -d macvlan -o parent={} macvlan_{} -o macvlan_mode=bridge".format (uplink, uplink)
+            cmd_str = "sudo docker network create -d macvlan -o parent={} {} -o macvlan_mode=bridge".format (uplink, testbed_info[uplink]['macvlan'])
             nodecmd (cmd_str)
-            time.sleep(5)
 
+        # time.sleep(5)
         pod_index = -1
-        server_id = 1
-        client_id = 1
+        zone_id = 0
         for traffic_path in testbed_info['traffic_paths']:
-            #server
-            pod_index += 1
-            self.start_pod(pod_index, testbed_info, traffic_path, client=False)
-            _runI.state = 'Setup Server-Subnets-Zone{}'.format(server_id)
-            server_id += 1
-        for traffic_path in testbed_info['traffic_paths']:
+            zone_id += 1
+            _runI.state = 'Setup Subnets-Zone{}'.format(zone_id)
+
             #client
             pod_index += 1
             self.start_pod(pod_index, testbed_info, traffic_path, client=True)
-            _runI.state = 'Setup Client-Subnets-Zone{}'.format(client_id)
-            client_id +=1
+
+            #server
+            pod_index += 1
+            self.start_pod(pod_index, testbed_info, traffic_path, client=False)
 
         self.ready = 1
 
@@ -426,7 +422,7 @@ class TlsApp(object):
         localcmd("rm -rf /rundir/db/*")
         localcmd("mongod --noauth --dbpath /rundir/db &")
 
-        time.sleep(1)
+        time.sleep(5)
 
         mongoClient = MongoClient (TlsCfg.DB_CSTRING)
         db = mongoClient[REGISTRY_DB_NAME]
@@ -615,7 +611,7 @@ class TlsCsApp(TlsApp):
             , 'error: testbed {} in use; running {}'.format \
             (self.testbedI.testbed, self.testbedI.runid))
 
-        self.runI.init_state ('Init Setup')
+        self.runI.init_state ('Init')
 
         # testbed readiness
         if self.testbedI.ready:
@@ -632,11 +628,8 @@ class TlsCsApp(TlsApp):
 
         if not self.testbedI.ready:
             self.testbedI.start(self.runI)
-            time.sleep(5)
-            self.runI.state = 'Exit Setup'
-            time.sleep(20)
-        else:
-            self.runI.state = 'Init Skipped'
+
+        # time.sleep(5)
 
         config_j = self.create_config(self.testbedI.testbed, **app_kwargs)
 
@@ -669,7 +662,7 @@ class TlsCsApp(TlsApp):
         if pod_start_threads:
             for thd in pod_start_threads:
                 thd.join()
-            time.sleep(5)
+            # time.sleep(5)
 
 
         # start the clients
@@ -697,7 +690,7 @@ class TlsCsApp(TlsApp):
         if pod_start_threads:
             for thd in pod_start_threads:
                 thd.join()
-            time.sleep(5)
+            # time.sleep(5)
 
         self.testbedI.runid = self.runI.runid
         self.runI.testbed = self.testbedI.testbed
@@ -736,7 +729,7 @@ class TlsCsApp(TlsApp):
         if pod_stop_threads:
             for thd in pod_stop_threads:
                 thd.join()
-            time.sleep(1)
+            # time.sleep(5)
 
 
         # stop the servers
@@ -761,7 +754,7 @@ class TlsCsApp(TlsApp):
         if pod_stop_threads:
             for thd in pod_stop_threads:
                 thd.join()
-            time.sleep(1)
+            # time.sleep(5)
 
         stop_run_stats (_runI.stats_pid)
 
@@ -864,3 +857,9 @@ if __name__ == '__main__':
                     , server_pod_ips
                     , proxy_pod_ips
                     , client_pod_ips)
+
+
+
+        
+        
+      
