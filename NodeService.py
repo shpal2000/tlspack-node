@@ -2,11 +2,33 @@ from aiohttp import web
 import json
 import os
 import sys
+import asyncio
 
 from .apps.TlsApp import TlsApp
 from .apps.TlsApp import TlsAppError
 
-app = web.Application()
+class ServiceUitl(object):
+    @staticmethod
+    def get_info(infoid):
+        return TlsApp.get_info(infoid)
+
+async def store_info(request):
+    infoid = request.match_info['infoid']
+    data_s = await request.read()
+    data_j = json.loads(data_s)
+    TlsApp.store_info(infoid, data_j)
+    info_file = '/rundir/store/'+infoid
+    with open (info_file, 'w') as f:
+        f.write(data_s)
+    return web.json_response ({"status" : 0})
+
+async def remove_info(request):
+    infoid = request.match_info['infoid']
+    info_file = '/rundir/store/'+infoid
+    if os.path.isfile(info_file):
+        os.remove(info_file)
+    TlsApp.remove_info(infoid)
+    return web.json_response ({"status" : 0})
 
 async def run_list(request):
     return web.json_response ({"run_list" : TlsApp.run_list()})
@@ -74,11 +96,33 @@ async def stop_run(request):
 
     return web.json_response ({'status' : 0})
 
-app.add_routes([web.get('/run_list', run_list),
-                web.get('/run_stats/{runid:.*}', run_stats),
-                web.post('/start_run/{runid:.*}', start_run),
-                web.get('/stop_run/{runid:.*}', stop_run)])
+async def fallback_path_handler(request):
+    fallback_path = request.match_info['fallback_path']
+
+    if os.path.isfile ( os.path.join ('/uidir/', fallback_path) ):
+        return web.FileResponse (path=os.path.join ('/uidir/', fallback_path))
+
+    with open('/uidir/index.html') as f:
+        index_str = f.read()
+    return web.Response (status=200, text=str(index_str), content_type='text/html')
 
 if __name__ == '__main__':
+    sys.path.append('/plugindir')
+    import RoutesExt 
+
     TlsApp.restart(sys.argv[1])
+
+    app = web.Application()
+
+    app.add_routes( RoutesExt.get_routes(ServiceUitl) + [ web.get('/store_info/{infoid:.*}', store_info),
+        web.get('/remove_info/{infoid:.*}', remove_info),
+        web.get('/run_list', run_list),
+        web.get('/run_stats/{runid:.*}', run_stats),
+        web.post('/start_run/{runid:.*}', start_run),
+        web.get('/stop_run/{runid:.*}', stop_run),
+        web.static('/static', '/uidir/static'),
+        web.get('/{fallback_path:.*}', fallback_path_handler),
+    ])
+
+
     web.run_app(app, port=8889)

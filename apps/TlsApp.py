@@ -19,7 +19,7 @@ from .config import POD_RUNDIR, NODE_SRCDIR, POD_SRCDIR, TCPDUMP_FLAG
 from .config import REGISTRY_DB_NAME, RESULT_DB_NAME
 from .config import STATS_TABLE, CSTATE_TABLE, LIVE_STATS_TABLE, POD_RUNDIR
 from .config import RPC_IP_VETH1, RPC_IP_VETH2, RPC_PORT, NODE_SRCDIR, POD_SRCDIR
-from .config import TESTBED_TABLE, RUN_TABLE, STATE_TABLE
+from .config import TESTBED_TABLE, RUN_TABLE, STATE_TABLE, INFO_TABLE
 
 class TlsCfg:
     DB_CSTRING = 'localhost:27017'
@@ -394,6 +394,34 @@ class TlsApp(object):
 
 
     @staticmethod
+    def store_info(infoid, infoj):
+        mongoClient = MongoClient (TlsCfg.DB_CSTRING)
+        db = mongoClient[REGISTRY_DB_NAME]
+        info_table = db[INFO_TABLE]
+        try:
+            info_table.remove ({'infoid' : infoid})
+        except:
+            pass
+        infoj['infoid'] = infoid
+        info_table.insert (infoj)
+        infoj.pop('_id', None)
+        infoj.pop('infoid', None)
+
+    @staticmethod
+    def remove_info(infoid):
+        mongoClient = MongoClient (TlsCfg.DB_CSTRING)
+        db = mongoClient[REGISTRY_DB_NAME]
+        info_table = db[INFO_TABLE]
+        info_table.remove ({'infoid' : infoid})
+
+    @staticmethod
+    def get_info(infoid):
+        mongoClient = MongoClient (TlsCfg.DB_CSTRING)
+        db = mongoClient[REGISTRY_DB_NAME]
+        info_table = db[INFO_TABLE]
+        return info_table.find_one({'infoid' : infoid})
+
+    @staticmethod
     def insert_testbed(testbed, testbed_j):
         mongoClient = MongoClient (TlsCfg.DB_CSTRING)
         db = mongoClient[REGISTRY_DB_NAME]
@@ -427,12 +455,7 @@ class TlsApp(object):
         mongoClient = MongoClient (TlsCfg.DB_CSTRING)
         db = mongoClient[REGISTRY_DB_NAME]
 
-        run_table = db[RUN_TABLE]
-        run_table.remove ({})
-
         testbed_table = db[TESTBED_TABLE]
-        testbed_table.remove ({})
-
         for areana in os.listdir('/rundir/arenas'):
             next_arena_file = '/rundir/arenas/'+areana
             with open (next_arena_file) as f:
@@ -446,6 +469,16 @@ class TlsApp(object):
             with open (next_arena_file, 'w') as f:
                 next_arena['modified'] = 0
                 f.write(json.dumps(next_arena))
+
+        info_table = db[INFO_TABLE]
+        for infoid in os.listdir('/rundir/store'):
+            next_info_file = '/rundir/store/'+infoid
+            with open (next_info_file) as f:
+                try:
+                    next_info = json.load(f)
+                except:
+                    continue
+                TlsApp.store_info (infoid, next_info)
 
     @staticmethod
     def create_config(package, app_name, testbed, **app_kwargs):
